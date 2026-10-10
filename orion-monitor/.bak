@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ORION | Global Situational Awareness</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #050505; --panel: #0a0a0a; --line: #2a2a2a; --text: #e5e7eb; --muted: #8b8f98;
+  --seismic: #ef4444; --events: #3b82f6; --news: #f59e0b; --ok: #10b981; --bad: #ef4444;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.4 Inter, system-ui, sans-serif; overflow: hidden; display: flex; flex-direction: column; }
+.mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--events); outline-offset: 2px; }
+
+header { height: 40px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--bg); z-index: 1100; }
+.brand { display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 600; letter-spacing: .18em; color: #9ca3af; white-space: nowrap; }
+.brand svg { width: 16px; height: 16px; color: var(--events); }
+.badge { font-size: 10px; letter-spacing: .08em; border: 1px solid #14532d; color: var(--ok); padding: 0 5px; border-radius: 3px; }
+.badge.off { border-color: #7f1d1d; color: var(--bad); }
+.status { display: flex; gap: 14px; font-size: 10px; color: var(--muted); align-items: center; overflow: hidden; }
+.chip { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: #555; }
+.chip[data-state="ok"] .dot { background: var(--ok); }
+.chip[data-state="loading"] .dot { background: var(--news); animation: blink 1s infinite; }
+.chip[data-state="error"] .dot { background: var(--bad); }
+@keyframes blink { 50% { opacity: .25; } }
+#menu-btn { display: none; background: none; border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+
+main { flex: 1; position: relative; display: flex; min-height: 0; overflow: hidden; }
+#map { position: absolute; inset: 0; z-index: 0; background: #0b0d10; }
+.leaflet-container { font-family: Inter, sans-serif; }
+.grid { position: absolute; inset: 0; pointer-events: none; opacity: .08; z-index: 400;
+  background-image: linear-gradient(#333 1px, transparent 1px), linear-gradient(90deg, #333 1px, transparent 1px); background-size: 50px 50px; }
+
+aside { position: relative; width: 280px; flex: none; z-index: 1000; display: flex; flex-direction: column; background: rgba(10,10,10,.95); border-right: 1px solid var(--line); backdrop-filter: blur(8px); margin-bottom: 32px; }
+.sect { padding: 14px; border-bottom: 1px solid var(--line); }
+h2 { margin: 0 0 10px; font-size: 11px; letter-spacing: .12em; color: #9ca3af; text-transform: uppercase; }
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; cursor: pointer; font-size: 12px; color: #9ca3af; }
+.toggle:hover { color: #fff; }
+.toggle .count { margin-left: auto; margin-right: 8px; font-size: 10px; color: var(--muted); }
+.toggle input { accent-color: var(--events); }
+.swatch { width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; flex: none; }
+.slider { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 11px; color: var(--muted); }
+.slider input { flex: 1; accent-color: var(--seismic); }
+#feed { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+#feed h2 { margin-bottom: 2px; }
+.item { display: block; width: 100%; text-align: left; background: none; border: 0; border-left: 2px solid var(--line); padding: 4px 0 4px 10px; cursor: default; text-decoration: none; color: inherit; }
+.item[data-clickable="true"] { cursor: pointer; }
+.item:hover { background: #111; }
+.item .kind { font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.item .title { font-size: 12px; color: #e5e7eb; line-height: 1.3; }
+.item .desc { font-size: 10px; color: var(--muted); }
+.empty { font-size: 11px; color: var(--muted); }
+::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+
+#ticker { position: absolute; left: 0; right: 0; bottom: 0; height: 32px; z-index: 1000; background: var(--panel); border-top: 1px solid var(--line); overflow: hidden; display: flex; align-items: center; }
+#ticker-track { display: inline-flex; gap: 40px; white-space: nowrap; font-size: 10px; color: #9ca3af; padding-left: 100%; animation: scroll 60s linear infinite; }
+#ticker:hover #ticker-track { animation-play-state: paused; }
+@keyframes scroll { to { transform: translateX(-100%); } }
+@media (prefers-reduced-motion: reduce) { #ticker-track { animation: none; padding-left: 12px; } .chip .dot { animation: none !important; } }
+
+.pin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; transition: transform .2s; }
+.pin:hover { transform: scale(1.4); }
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #111; color: #fff; border: 1px solid #333; }
+.pop h3 { margin: 0 0 2px; font-size: 13px; }
+.pop .t { font-size: 10px; color: #888; }
+.pop p { margin: 4px 0 0; font-size: 12px; }
+.pop a { color: var(--events); }
+#map-note { position: absolute; top: 10px; right: 10px; z-index: 1000; background: rgba(10,10,10,.9); border: 1px solid #7f1d1d; color: #fca5a5; font-size: 11px; padding: 6px 10px; border-radius: 4px; display: none; }
+
+@media (max-width: 767px) {
+  #menu-btn { display: inline-block; }
+  .status .opt { display: none; }
+  aside { position: absolute; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); transform: translateX(-100%); transition: transform .2s; }
+  aside.open { transform: none; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <button id="menu-btn" aria-controls="sidebar" aria-expanded="false" type="button">STREAMS</button>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 7 9 3 5 7l4 4"/><path d="m17 11 4 4-4 4-4-4"/><path d="m8 12 4 4 6-6-4-4Z"/><path d="m16 8 3-3"/><path d="M9 21a6 6 0 0 0-6-6"/></svg>
+    ORION GLOBAL MONITOR
+    <span id="net-badge" class="badge mono">LIVE</span>
+  </div>
+  <div class="status mono">
+    <span class="chip" id="st-seismic" data-state="loading"><i class="dot"></i>USGS</span>
+    <span class="chip" id="st-events" data-state="loading"><i class="dot"></i>GDELT</span>
+    <span class="chip" id="st-news" data-state="loading"><i class="dot"></i>NEWS</span>
+    <span class="opt" id="updated">UPDATED --</span>
+    <span class="opt" id="clock">--:--:-- UTC</span>
+  </div>
+</header>
+
+<main>
+  <div id="map" role="application" aria-label="World map of seismic and global events"></div>
+  <div class="grid"></div>
+  <div id="map-note" role="status">Basemap tiles unavailable. Markers still plot.</div>
+
+  <aside id="sidebar" aria-label="Data streams and activity log">
+    <div class="sect">
+      <h2>Data Streams</h2>
+      <label class="toggle"><span style="display:flex;align-items:center"><i class="swatch" style="background:var(--seismic)"></i>Seismic (USGS)</span><span class="count mono" id="n-seismic">0</span><input type="checkbox" data-layer="seismic" checked></label>
+      <label class="toggle"><span style="display:flex;align-items:center"><i class="swatch" style="background:var(--events)"></i>Global Events (GDELT)</span><span class="count mono" id="n-events">0</span><input type="checkbox" data-layer="events" checked></label>
+      <label class="toggle"><span style="display:flex;align-items:center"><i class="swatch" style="background:var(--news)"></i>News Feed (BBC)</span><span class="count mono" id="n-news">0</span><input type="checkbox" data-layer="news" checked></label>
+      <div class="slider"><label for="minmag">Min magnitude</label><input id="minmag" type="range" min="4.5" max="8" step="0.1" value="4.5"><span id="minmag-val" class="mono">4.5</span></div>
+    </div>
+    <div id="feed"><h2>Activity Log</h2><div class="empty" id="feed-empty">Waiting for data…</div></div>
+  </aside>
+
+  <div id="ticker" aria-label="Latest events"><div id="ticker-track" class="mono"><span>ACQUIRING FEEDS…</span></div></div>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var COLORS = { seismic: '#ef4444', events: '#3b82f6', news: '#f59e0b' };
+  var URLS = {
+    seismic: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson',
+    events: 'https://api.gdeltproject.org/api/v2/geo/geo?query=conflict&format=GeoJSON&timespan=24h',
+    news: 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent('https://feeds.bbci.co.uk/news/world/rss.xml')
+  };
+  var INTERVALS = { seismic: 60e3, events: 300e3, news: 300e3 };
+  var TIMEOUT_MS = 12000;
+  var MAX_FEED = 30;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ---------- helpers ----------
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function stripHtml(s) {
+    var d = new DOMParser().parseFromString(String(s || ''), 'text/html');
+    return (d.body.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+  function safeUrl(u) {
+    try { var p = new URL(u); return (p.protocol === 'https:' || p.protocol === 'http:') ? p.href : ''; }
+    catch (e) { return ''; }
+  }
+  function clip(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s; }
+  function utc(d) { return d.toISOString().slice(11, 19) + ' UTC'; }
+  function validCoord(lat, lng) {
+    return typeof lat === 'number' && typeof lng === 'number' && isFinite(lat) && isFinite(lng) &&
+      Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0);
+  }
+  function fetchJson(url) {
+    var ctl = new AbortController();
+    var timer = setTimeout(function () { ctl.abort(); }, TIMEOUT_MS);
+    return fetch(url, { signal: ctl.signal }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).finally(function () { clearTimeout(timer); });
+  }
+
+  // ---------- map ----------
+  var map = L.map('map', { zoomControl: false, attributionControl: true, minZoom: 2, maxZoom: 10, worldCopyJump: true, maxBounds: [[-85, -Infinity], [85, Infinity]] })
+    .setView([20, 0], 2);
+  L.control.zoom({ position: 'topright' }).addTo(map);
+  map.attributionControl.setPrefix(false);
+
+  var tiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd', maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+  }).addTo(map);
+  var tileErrors = 0;
+  tiles.on('tileerror', function () { if (++tileErrors > 6) $('map-note').style.display = 'block'; });
+  tiles.on('tileload', function () { tileErrors = 0; $('map-note').style.display = 'none'; });
+
+  var layers = { seismic: L.layerGroup().addTo(map), events: L.layerGroup().addTo(map) };
+  var enabled = { seismic: true, events: true, news: true };
+  var state = { minMag: 4.5, items: { seismic: [], events: [], news: [] }, ok: { seismic: false, events: false, news: false } };
+
+  function popupNode(color, title, time, desc, link) {
+    var n = document.createElement('div'); n.className = 'pop';
+    var h = document.createElement('h3'); h.style.color = color; h.textContent = title; n.appendChild(h);
+    var t = document.createElement('div'); t.className = 't mono'; t.textContent = time; n.appendChild(t);
+    var p = document.createElement('p'); p.textContent = desc; n.appendChild(p);
+    if (link) { var a = document.createElement('a'); a.href = link; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = 'Open source'; var q = document.createElement('p'); q.appendChild(a); n.appendChild(q); }
+    return n;
+  }
+  function marker(type, lat, lng, size, rec) {
+    var icon = L.divIcon({
+      className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+      html: '<div class="pin" style="width:' + size + 'px;height:' + size + 'px;background:' + COLORS[type] + ';box-shadow:0 0 10px ' + COLORS[type] + '"></div>'
+    });
+    var m = L.marker([lat, lng], { icon: icon, title: rec.title, keyboard: true });
+    m.bindPopup(popupNode(COLORS[type], rec.title, rec.time, rec.desc, rec.link), { maxWidth: 240 });
+    return m;
+  }
+
+  // ---------- feed + ticker ----------
+  var feedEl = $('feed');
+  var log = []; // newest first
+  function logItem(type, title, desc, rec) {
+    log.unshift({ type: type, title: title, desc: desc, rec: rec });
+    if (log.length > MAX_FEED) log.pop();
+    renderFeed();
+  }
+  function renderFeed() {
+    var empty = $('feed-empty'); if (empty) empty.remove();
+    var old = feedEl.querySelectorAll('.item'); old.forEach(function (n) { n.remove(); });
+    log.forEach(function (e) {
+      if (!enabled[e.type]) return;
+      var rec = e.rec || {};
+      var hasPos = rec.lat != null && validCoord(rec.lat, rec.lng);
+      var link = e.type === 'news' ? safeUrl(rec.link) : '';
+      var el = document.createElement(link ? 'a' : 'button');
+      el.className = 'item'; el.style.borderLeftColor = COLORS[e.type] || '#555';
+      if (link) { el.href = link; el.target = '_blank'; el.rel = 'noopener noreferrer'; } else el.type = 'button';
+      el.dataset.clickable = String(hasPos || !!link);
+      var k = document.createElement('div'); k.className = 'kind mono'; k.textContent = e.type;
+      var t = document.createElement('div'); t.className = 'title'; t.textContent = e.title;
+      var d = document.createElement('div'); d.className = 'desc'; d.textContent = e.desc;
+      el.append(k, t, d);
+      if (hasPos) el.addEventListener('click', function () {
+        map.flyTo([rec.lat, rec.lng], Math.max(map.getZoom(), 5), { duration: .8 });
+        if (rec.marker) rec.marker.openPopup();
+        closeSidebar();
+      });
+      feedEl.appendChild(el);
+    });
+  }
+  function renderTicker() {
+    var parts = [];
+    ['seismic', 'events', 'news'].forEach(function (k) {
+      if (!enabled[k]) return;
+      state.items[k].slice(0, 6).forEach(function (r) { parts.push(k.toUpperCase() + ': ' + clip(r.title + (r.desc ? ' — ' + r.desc : ''), 90)); });
+    });
+    var track = $('ticker-track');
+    track.textContent = '';
+    (parts.length ? parts : ['NO ACTIVE STREAMS']).forEach(function (p) { var s = document.createElement('span'); s.textContent = p; track.appendChild(s); });
+  }
+
+  // ---------- status ----------
+  function setStatus(k, s, tip) {
+    var el = $('st-' + k); el.dataset.state = s; el.title = tip || '';
+    state.ok[k] = s === 'ok';
+  }
+  function touchUpdated() { $('updated').textContent = 'UPDATED ' + utc(new Date()); }
+
+  // ---------- loaders ----------
+  var seen = { seismic: new Set(), events: new Set(), news: new Set() };
+  function announce(k, title, desc, rec) {
+    // log only items not previously announced, so refreshes don't spam the feed
+    if (rec && rec.id != null) { if (seen[k].has(rec.id)) return; seen[k].add(rec.id); }
+    logItem(k, title, desc, rec);
+  }
+
+  function loadSeismic() {
+    setStatus('seismic', 'loading');
+    return fetchJson(URLS.seismic).then(function (data) {
+      var feats = (data && data.features) || [];
+      var recs = [];
+      feats.forEach(function (f) {
+        var c = f.geometry && f.geometry.coordinates, p = f.properties || {};
+        if (!c || !validCoord(c[1], c[0]) || typeof p.mag !== 'number') return;
+        recs.push({ id: f.id, lat: c[1], lng: c[0], mag: p.mag, title: 'M ' + p.mag.toFixed(1), desc: p.place || 'Unknown location',
+          time: new Date(p.time).toISOString().replace('T', ' ').slice(0, 19) + ' UTC', link: safeUrl(p.url) });
+      });
+      recs.sort(function (a, b) { return b.mag - a.mag; });
+      state.items.seismic = recs;
+      drawSeismic();
+      recs.slice(0, 5).reverse().forEach(function (r) { announce('seismic', r.title, r.desc, r); });
+      $('n-seismic').textContent = recs.length;
+      setStatus('seismic', 'ok', recs.length + ' events'); touchUpdated(); renderTicker();
+    }).catch(function (e) { setStatus('seismic', 'error', e.message); announce('seismic', 'USGS unavailable', e.message, null); });
+  }
+  function drawSeismic() {
+    layers.seismic.clearLayers();
+    state.items.seismic.forEach(function (r) {
+      if (r.mag < state.minMag) return;
+      r.marker = marker('seismic', r.lat, r.lng, Math.round(8 + Math.min(r.mag - 4, 4) * 3), r);
+      layers.seismic.addLayer(r.marker);
+    });
+  }
+
+  function loadEvents() {
+    setStatus('events', 'loading');
+    return fetchJson(URLS.events).then(function (data) {
+      var feats = (data && data.features) || [];
+      var recs = [];
+      feats.forEach(function (f, i) {
+        var c = f.geometry && f.geometry.coordinates, p = f.properties || {};
+        if (!c || !validCoord(c[1], c[0])) return;
+        var count = Number(p.count) || 1;
+        recs.push({ id: (p.name || '') + '|' + c[0] + '|' + c[1], lat: c[1], lng: c[0], count: count,
+          title: p.name || 'Global event', desc: count + ' conflict-related report' + (count === 1 ? '' : 's') + ' / 24h',
+          time: utc(new Date()), link: '' });
+      });
+      recs.sort(function (a, b) { return b.count - a.count; });
+      recs = recs.slice(0, 60);
+      state.items.events = recs;
+      layers.events.clearLayers();
+      recs.forEach(function (r) { r.marker = marker('events', r.lat, r.lng, Math.round(8 + Math.min(Math.log2(r.count + 1), 6) * 1.5), r); layers.events.addLayer(r.marker); });
+      recs.slice(0, 5).reverse().forEach(function (r) { announce('events', r.title, r.desc, r); });
+      $('n-events').textContent = recs.length;
+      setStatus('events', 'ok', recs.length + ' locations'); touchUpdated(); renderTicker();
+    }).catch(function (e) { setStatus('events', 'error', e.message); announce('events', 'GDELT unavailable', e.message, null); });
+  }
+
+  function loadNews() {
+    setStatus('news', 'loading');
+    return fetchJson(URLS.news).then(function (data) {
+      var items = (data && data.items) || [];
+      var recs = items.slice(0, 10).map(function (it) {
+        return { id: it.guid || it.link || it.title, title: stripHtml(it.title), desc: clip(stripHtml(it.description), 90),
+          time: it.pubDate || '', link: safeUrl(it.link) };
+      });
+      state.items.news = recs;
+      recs.slice(0, 5).reverse().forEach(function (r) { announce('news', r.title, r.desc, r); });
+      $('n-news').textContent = recs.length;
+      setStatus('news', 'ok', recs.length + ' stories'); touchUpdated(); renderTicker();
+    }).catch(function (e) { setStatus('news', 'error', e.message); announce('news', 'News feed unavailable', e.message, null); });
+  }
+
+  // ---------- controls ----------
+  document.querySelectorAll('input[data-layer]').forEach(function (cb) {
+    cb.addEventListener('change', function () {
+      var k = cb.dataset.layer;
+      enabled[k] = cb.checked;
+      if (layers[k]) { if (cb.checked) map.addLayer(layers[k]); else map.removeLayer(layers[k]); }
+      renderFeed();
+      renderTicker();
+    });
+  });
+  $('minmag').addEventListener('input', function (e) {
+    state.minMag = parseFloat(e.target.value);
+    $('minmag-val').textContent = state.minMag.toFixed(1);
+    drawSeismic();
+    var shown = state.items.seismic.filter(function (r) { return r.mag >= state.minMag; }).length;
+    $('n-seismic').textContent = shown;
+    renderTicker();
+  });
+
+  var sidebar = $('sidebar'), menuBtn = $('menu-btn');
+  function closeSidebar() { sidebar.classList.remove('open'); menuBtn.setAttribute('aria-expanded', 'false'); }
+  menuBtn.addEventListener('click', function () {
+    var open = sidebar.classList.toggle('open'); menuBtn.setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSidebar(); });
+
+  function tickClock() { $('clock').textContent = utc(new Date()); }
+  tickClock(); setInterval(tickClock, 1000);
+
+  function netState() {
+    var b = $('net-badge'), on = navigator.onLine;
+    b.textContent = on ? 'LIVE' : 'OFFLINE'; b.classList.toggle('off', !on);
+  }
+  window.addEventListener('online', function () { netState(); loadAll(); });
+  window.addEventListener('offline', netState);
+  netState();
+
+  function loadAll() { return Promise.all([loadSeismic(), loadEvents(), loadNews()]); }
+  loadAll();
+  setInterval(loadSeismic, INTERVALS.seismic);
+  setInterval(loadEvents, INTERVALS.events);
+  setInterval(loadNews, INTERVALS.news);
+
+  window.__orion = { map: map, layers: layers, esc: esc, stripHtml: stripHtml, safeUrl: safeUrl, validCoord: validCoord, loadSeismic: loadSeismic, loadEvents: loadEvents, loadNews: loadNews };
+})();
+</script>
+</body>
+</html>
