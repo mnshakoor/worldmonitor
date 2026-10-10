@@ -12,7 +12,7 @@ Basemap: CARTO dark tiles (OpenStreetMap data). Leaflet 1.9.4 from unpkg.
 ## Tests
 
 ```
-npm install
+npm install --no-package-lock
 npm test
 ```
 
