@@ -37,17 +37,17 @@ async function open({ viewport = { width: 1280, height: 800 }, fail = [], mock =
   page.on('pageerror', (e) => errors.push(e.message));
   const calls = { seismic: 0, events: 0, news: 0 };
   await page.route('**/*', (route) => {
-    const u = route.request().url();
+    const url = new URL(route.request().url());
+    const host = url.hostname;
     const ok = (body, type) => route.fulfill({ status: 200, contentType: type, body, headers: { 'access-control-allow-origin': '*' } });
-    if (u.startsWith('file:') || u.endsWith('/index.html')) return route.continue();
-    if (u.includes('leaflet.js')) return ok(leafletJs, 'text/javascript');
-    if (u.includes('leaflet.css')) return ok(leafletCss, 'text/css');
-    if (u.includes('fonts.g')) return ok('', 'text/css');
-    if (u.includes('cartocdn.com')) return ok(PNG, 'image/png');
-    for (const k of ['seismic', 'events', 'news']) {
-      const match = k === 'seismic' ? u.includes('earthquake.usgs.gov') : k === 'events' ? u.includes('gdeltproject') : u.includes('rss2json');
-      if (match) { calls[k]++; return fail.includes(k) ? route.fulfill({ status: 500, body: 'x' }) : ok(JSON.stringify(mock[k]), 'application/json'); }
-    }
+    if (url.protocol === 'file:') return route.continue();
+    if (host === 'unpkg.com' && url.pathname.endsWith('/leaflet.js')) return ok(leafletJs, 'text/javascript');
+    if (host === 'unpkg.com' && url.pathname.endsWith('/leaflet.css')) return ok(leafletCss, 'text/css');
+    if (host === 'fonts.googleapis.com' || host === 'fonts.gstatic.com') return ok('', 'text/css');
+    if (host.endsWith('.basemaps.cartocdn.com')) return ok(PNG, 'image/png');
+    const feeds = { 'earthquake.usgs.gov': 'seismic', 'api.gdeltproject.org': 'events', 'api.rss2json.com': 'news' };
+    const k = feeds[host];
+    if (k) { calls[k]++; return fail.includes(k) ? route.fulfill({ status: 500, body: 'x' }) : ok(JSON.stringify(mock[k]), 'application/json'); }
     return route.abort();
   });
   await page.goto('http://orion.test/index.html'.replace('http://orion.test', 'file://' + root));
