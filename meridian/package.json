@@ -1,0 +1,23 @@
+{
+  "name": "meridian",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Meridian: conflict and humanitarian situational awareness dashboard (clean-room build)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "maplibre-gl": "^5.16.0",
+    "preact": "^10.25.4"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.1",
+    "@types/node": "^22.20.5",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}
