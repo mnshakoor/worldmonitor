@@ -3,6 +3,7 @@
 Single-file situational awareness map. Open `index.html` in a browser; no build step.
 
 Streams (all client-side, no keys):
+
 - Seismic: USGS M4.5+ past day, refreshed every 60 s
 - Global events: GDELT GEO 2.0 conflict geography, refreshed every 5 min
 - News: BBC World RSS via rss2json, refreshed every 5 min
